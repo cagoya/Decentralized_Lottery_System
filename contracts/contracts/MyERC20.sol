@@ -17,4 +17,8 @@ contract MyERC20 is ERC20 {
         claimedAirdropPlayerList[msg.sender] = true;
     }
 
+    function mint(address to, uint256 amount) external returns (bool) {
+        _mint(to, amount);
+        return true;
+    }
 }
