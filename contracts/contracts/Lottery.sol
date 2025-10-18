@@ -18,6 +18,8 @@ contract Lottery {
 
     // 出售状态枚举
     enum ListingStatus {Selling, Cancelled, Sold}
+    // 凭证状态枚举
+    enum TicketStatus {Ready, OnSale, Winning, Losing }
     // 活动状态枚举
     enum ActivityStatus {Active, Drawn, Refunded}
 
@@ -39,7 +41,7 @@ contract Lottery {
         uint256 activityId; // 活动ID
         uint32 amount; // 投注金额
         uint32 optionIndex; // 投注选项索引
-        bool onSale; // 是否在出售
+        TicketStatus status; // 凭证状态
     }
 
     // 凭证出参结构体
@@ -51,7 +53,7 @@ contract Lottery {
         uint32 optionIndex; // 投注选项索引
         string option; // 投注选项
         uint32 endTime; // 结束时间
-        bool onSale; // 是否在出售
+        TicketStatus status; // 凭证状态
         ActivityStatus activityStatus; // 活动状态
     }
 
@@ -111,8 +113,8 @@ contract Lottery {
 
     // 发布竞猜活动
     function createActivity(string memory name, string[] memory options, uint32 endTime, uint32 baseAmount) public onlyManager {
-        require(options.length >= 2);
-        require(endTime > block.timestamp);
+        require(options.length >= 2, "At least 2 options required");
+        require(endTime > block.timestamp, "End time must be in the future");
         
         activities.push(Activity({
             id: activityIdCounter,
@@ -137,10 +139,10 @@ contract Lottery {
     
     // 购买凭证
     function buyTicket(uint256 activityId, uint32 optionIndex, uint32 amount) public {
-        require(activityId < activities.length);
-        require(optionIndex < activities[activityId].options.length);
-        require(activities[activityId].status == ActivityStatus.Active);
-        require(amount > 0);
+        require(activityId < activities.length, "Activity does not exist");
+        require(optionIndex < activities[activityId].options.length, "Invalid option index");
+        require(activities[activityId].status == ActivityStatus.Active, "Activity is not active");
+        require(amount > 0, "Amount must be greater than 0");
         
         // 从用户账户中转移投注金额到合约账户
         bool ok = myERC20.transferFrom(msg.sender, address(this), amount);
@@ -153,7 +155,7 @@ contract Lottery {
             activityId: activityId,
             amount: amount,
             optionIndex: optionIndex,
-            onSale: false
+            status: TicketStatus.Ready
         }));
         ownerToTicketIds[msg.sender].push(ticketId);
         activityIdToTicketIds[activityId].push(ticketId);
@@ -177,7 +179,7 @@ contract Lottery {
                 optionIndex: ticket.optionIndex,
                 option: activity.options[ticket.optionIndex],
                 endTime: activity.endTime,
-                onSale: ticket.onSale,
+                status: ticket.status,
                 activityStatus: activity.status
             });
         }
@@ -187,15 +189,15 @@ contract Lottery {
     // 出售凭证
     function listTicket(uint256 ticketId, uint32 price) public {
         // 验证凭证是否存在
-        require(ticketId < tickets.length);
+        require(ticketId < tickets.length, "Ticket does not exist");
         // 验证发送者是否是NFT的拥有者
-        require(myERC721.ownerOf(ticketId) == msg.sender);
-        // 验证凭证未在出售中
-        require(!tickets[ticketId].onSale);
+        require(myERC721.ownerOf(ticketId) == msg.sender, "You are not the owner of this ticket");
+        // 验证凭证状态为Ready
+        require(tickets[ticketId].status == TicketStatus.Ready, "Ticket is not available for listing");
         // 验证价格是否大于0
-        require(price > 0);
+        require(price > 0, "Price must be greater than 0");
         // 验证活动进行中
-        require(activities[tickets[ticketId].activityId].status == ActivityStatus.Active);
+        require(activities[tickets[ticketId].activityId].status == ActivityStatus.Active, "Activity is not active");
 
         Ticket storage ticket = tickets[ticketId];
         
@@ -212,7 +214,7 @@ contract Lottery {
         }));
         
         // 将ticket设为出售中
-        ticket.onSale = true;
+        ticket.status = TicketStatus.OnSale;
         activityIdToListingIds[ticket.activityId].push(listingIdCounter);
         ownerToListingIds[msg.sender].push(listingIdCounter);
         listingIdCounter++;
@@ -231,31 +233,31 @@ contract Lottery {
         myERC721.transferFrom(address(this), listing.seller, ticketId);
         
         // 更新状态
-        tickets[ticketId].onSale = false;
+        tickets[ticketId].status = TicketStatus.Ready;
         listing.status = ListingStatus.Cancelled;
     }
 
     // 取消挂单
     function cancelListing(uint256 listingId) public {
-        require(listingId < listings.length);
+        require(listingId < listings.length, "Listing does not exist");
         Listing storage listing = listings[listingId];
-        require(listing.status == ListingStatus.Selling);
-        require(listing.seller == msg.sender);
+        require(listing.status == ListingStatus.Selling, "Listing is not active");
+        require(listing.seller == msg.sender, "You are not the seller");
         
         _cancelListing(listingId);
     }
 
     // 购买挂单出售的凭证
     function buyListing(uint256 listingId) public {
-        require(listingId < listings.length);
+        require(listingId < listings.length, "Listing does not exist");
         Listing storage listing = listings[listingId];
-        require(listing.status == ListingStatus.Selling);
+        require(listing.status == ListingStatus.Selling, "Listing is not active");
         
         uint256 ticketId = listing.ticketId;
         address seller = listing.seller;
         
         // 验证卖家不是购买者
-        require(seller != msg.sender);
+        require(seller != msg.sender, "You cannot buy your own listing");
         
         // 从购买者账户转账给卖家
         bool ok = myERC20.transferFrom(msg.sender, seller, listing.price);
@@ -278,7 +280,7 @@ contract Lottery {
         }
         
         // 更新状态
-        tickets[ticketId].onSale = false;
+        tickets[ticketId].status = TicketStatus.Ready;
         listing.status = ListingStatus.Sold;
     }
     
@@ -335,10 +337,10 @@ contract Lottery {
     
     // 开奖
     function drawLottery(uint256 activityId, uint32 winningOptionIndex) public onlyManager {
-        require(activityId < activities.length);
+        require(activityId < activities.length, "Activity does not exist");
         Activity storage activity = activities[activityId];
-        require(activity.status == ActivityStatus.Active);
-        require(winningOptionIndex < activity.options.length);
+        require(activity.status == ActivityStatus.Active, "Activity is not active");
+        require(winningOptionIndex < activity.options.length, "Invalid option index");
         // 现在是手动开奖，故不检查时间
         // require(block.timestamp >= activity.endTime, "Activity has not ended yet");
         
@@ -354,7 +356,7 @@ contract Lottery {
             }
         }
         
-        require(winningAmount > 0);
+        require(winningAmount > 0, "No winning tickets");
 
         // 取消全部挂单（需要在标记为已开奖之前执行）
         cancelListingsByActivityId(activityId);
@@ -373,16 +375,18 @@ contract Lottery {
                 uint32 prize = (totalPrize * ticket.amount) / winningAmount;
                 bool ok = myERC20.transfer(winner, prize);
                 require(ok);
+                ticket.status = TicketStatus.Winning;
+            } else {
+                ticket.status = TicketStatus.Losing;
             }
-            ticket.onSale = false;
         }
     }
 
     // 退款
     function refund(uint256 activityId) public {
-        require(activityId < activities.length);
+        require(activityId < activities.length, "Activity does not exist");
         Activity storage activity = activities[activityId];
-        require(activity.status == ActivityStatus.Active);
+        require(activity.status == ActivityStatus.Active, "Activity is not active");
 
         // 取消全部挂单
         cancelListingsByActivityId(activityId);
@@ -394,15 +398,15 @@ contract Lottery {
             Ticket storage ticket = tickets[activityTicketIds[i]];
             bool ok = myERC20.transfer(myERC721.ownerOf(ticket.id), ticket.amount);
             require(ok);
-            ticket.onSale = false;
+            ticket.status = TicketStatus.Ready;
         }
     }
 
     // 取消一个活动的所有挂单
     function cancelListingsByActivityId(uint256 activityId) public onlyManager {
-        require(activityId < activities.length);
+        require(activityId < activities.length, "Activity does not exist");
         Activity memory activity = activities[activityId];
-        require(activity.status == ActivityStatus.Active);
+        require(activity.status == ActivityStatus.Active, "Activity is not active");
         
         uint256[] memory activityListingIds = activityIdToListingIds[activityId];
         for (uint256 i = 0; i < activityListingIds.length; i++) {

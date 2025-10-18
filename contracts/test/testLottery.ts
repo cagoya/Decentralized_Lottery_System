@@ -288,7 +288,7 @@ describe("Lottery Contract", function () {
     it("Should mark ticket as on sale", async function () {
       await lottery.connect(user1).listTicket(ticketId, 150);
       const tickets = await lottery.tickets(ticketId);
-      expect(tickets.onSale).to.equal(true);
+      expect(tickets.status).to.equal(1); // TicketStatus.OnSale
     });
 
     it("Should fail if not owner", async function () {
@@ -370,7 +370,7 @@ describe("Lottery Contract", function () {
     it("Should mark ticket as not on sale", async function () {
       await lottery.connect(user2).buyListing(listingId);
       const ticket = await lottery.tickets(ticketId);
-      expect(ticket.onSale).to.equal(false);
+      expect(ticket.status).to.equal(0); // TicketStatus.Ready
     });
 
     it("Should fail if buyer is seller", async function () {
@@ -422,7 +422,7 @@ describe("Lottery Contract", function () {
     it("Should mark ticket as not on sale", async function () {
       await lottery.connect(user1).cancelListing(listingId);
       const ticket = await lottery.tickets(ticketId);
-      expect(ticket.onSale).to.equal(false);
+      expect(ticket.status).to.equal(0); // TicketStatus.Ready
     });
 
     it("Should fail if not seller", async function () {
