@@ -1,6 +1,7 @@
 import Addresses from './contract-addresses.json'
 import Lottery from './abis/Lottery.json'
 import MyERC20 from './abis/MyERC20.json'
+import MyERC721 from './abis/MyERC721.json'
 import Web3 from 'web3';
 
 // @ts-ignore
@@ -13,10 +14,13 @@ const lotteryAddress = Addresses.lottery
 const lotteryABI = Lottery.abi
 const myERC20Address = Addresses.myERC20
 const myERC20ABI = MyERC20.abi
+const myERC721Address = Addresses.myERC721
+const myERC721ABI = MyERC721.abi
 
 // 获取合约实例
 const lotteryContract = new web3.eth.Contract(lotteryABI, lotteryAddress);
 const myERC20Contract = new web3.eth.Contract(myERC20ABI, myERC20Address);
+const myERC721Contract = new web3.eth.Contract(myERC721ABI, myERC721Address);
 
 // 导出web3实例和其它部署的合约
-export {web3, lotteryContract, myERC20Contract}
+export {web3, lotteryContract, myERC20Contract, myERC721Contract, lotteryAddress}
