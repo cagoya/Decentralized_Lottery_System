@@ -8,6 +8,9 @@ async function main() {
 
   const erc20 = await lottery.myERC20();
   console.log(`erc20 contract has been deployed successfully in ${erc20}`)
+
+  const erc721 = await lottery.myERC721();
+  console.log(`erc721 contract has been deployed successfully in ${erc721}`)
 }
 
 // We recommend this pattern to be able to use async/await everywhere

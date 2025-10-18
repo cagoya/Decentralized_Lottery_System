@@ -18,26 +18,28 @@ contract Lottery {
 
     // 出售状态枚举
     enum ListingStatus {Selling, Cancelled, Sold}
+    // 活动状态枚举
+    enum ActivityStatus {Active, Drawn, Refunded}
 
     // 活动结构体
     struct Activity {
         uint256 id; // 活动ID
         string name; // 活动名称
         string[] options; // 选项列表
-        uint256 endTime; // 结束时间
-        uint256 baseAmount; // 奖池基础金额
-        uint256 totalAmount; // 奖池目前总金额
-        bool drawn; // 是否已开奖
-        uint256 winningOptionIndex; // 获胜选项索引
+        uint32 endTime; // 结束时间
+        uint32 baseAmount; // 奖池基础金额
+        uint32 totalAmount; // 奖池目前总金额
+        ActivityStatus status; // 活动状态
+        uint32 winningOptionIndex; // 获胜选项索引
     }
 
     // 凭证结构体
     struct Ticket {
         uint256 id; // 凭证NFT的ID
         uint256 activityId; // 活动ID
-        uint256 amount; // 投注金额
-        uint256 optionIndex; // 投注选项索引
-        uint256 endTime; // 结束时间
+        uint32 amount; // 投注金额
+        uint32 optionIndex; // 投注选项索引
+        uint32 endTime; // 结束时间
         bool onSale; // 是否在出售
     }
 
@@ -46,11 +48,11 @@ contract Lottery {
         uint256 id; // 出售ID
         uint256 ticketId; // 凭证ID
         address seller; // 卖家地址
-        uint256 price; // 价格
+        uint32 price; // 价格
         uint256 activityId; // 活动ID
-        uint256 amount; // 金额
-        uint256 optionIndex; // 选项ID
-        uint256 endTime; // 截止时间
+        uint32 amount; // 金额
+        uint32 optionIndex; // 选项ID
+        uint32 endTime; // 截止时间
         ListingStatus status; // 状态
     }
 
@@ -84,7 +86,7 @@ contract Lottery {
     }
 
     // 发布竞猜活动
-    function createActivity(string memory name, string[] memory options, uint256 endTime, uint256 baseAmount) public onlyManager {
+    function createActivity(string memory name, string[] memory options, uint32 endTime, uint32 baseAmount) public onlyManager {
         require(options.length >= 2, "At least 2 options required");
         require(endTime > block.timestamp, "End time must be in the future");
         
@@ -95,7 +97,7 @@ contract Lottery {
             endTime: endTime,
             baseAmount: baseAmount,
             totalAmount: baseAmount,
-            drawn: false,
+            status: ActivityStatus.Active,
             winningOptionIndex: 0
         }));
         activityIdCounter++;
@@ -115,11 +117,10 @@ contract Lottery {
     }
     
     // 购买凭证
-    function buyTicket(uint256 activityId, uint256 optionIndex, uint256 amount) public {
+    function buyTicket(uint256 activityId, uint32 optionIndex, uint32 amount) public {
         require(activityId < activities.length, "Activity does not exist");
         require(optionIndex < activities[activityId].options.length, "Invalid option index");
-        require(block.timestamp < activities[activityId].endTime, "Activity has ended");
-        require(!activities[activityId].drawn, "Activity already drawn");
+        require(activities[activityId].status == ActivityStatus.Active, "Activity is not active");
         require(amount > 0, "Amount must be greater than 0");
         
         // 从用户账户中转移投注金额到合约账户
@@ -155,16 +156,19 @@ contract Lottery {
     }
 
     // 出售凭证
-    function listTicket(uint256 ticketId, uint256 price) public {
+    function listTicket(uint256 ticketId, uint32 price) public {
+        // 验证凭证是否存在
         require(ticketId < tickets.length, "Ticket does not exist");
         // 验证发送者是否是NFT的拥有者
         require(myERC721.ownerOf(ticketId) == msg.sender, "You are not the owner of this ticket");
         // 验证凭证未在出售中
         require(!tickets[ticketId].onSale, "Ticket is already on sale");
+        // 验证价格是否大于0
         require(price > 0, "Price must be greater than 0");
-        
+        // 验证活动进行中
+        require(activities[tickets[ticketId].activityId].status == ActivityStatus.Active, "Activity is not active");
+
         Ticket memory ticket = tickets[ticketId];
-        require(!activities[ticket.activityId].drawn, "Activity already drawn");
         
         // 将凭证转移给合约
         myERC721.transferFrom(msg.sender, address(this), ticketId);
@@ -190,29 +194,41 @@ contract Lottery {
         listingIdCounter++;
     }
 
-    // 取消挂单
-    function cancelListing(uint256 listingId) public {
+    // 内部取消挂单函数
+    function _cancelListing(uint256 listingId) internal {
         Listing storage listing = listings[listingId];
-        require(listing.seller == msg.sender, "You are not the seller");
-        require(listing.status == ListingStatus.Selling, "Listing is not active");
+        if (listing.status != ListingStatus.Selling) {
+            return; // 如果已经不是在售状态，跳过
+        }
         
         uint256 ticketId = listing.ticketId;
         
-        // 将NFT转移回拥有者
-        myERC721.transferFrom(address(this), msg.sender, ticketId);
+        // 将NFT转移回卖家
+        myERC721.transferFrom(address(this), listing.seller, ticketId);
         
         // 更新状态
         tickets[ticketId].onSale = false;
         listing.status = ListingStatus.Cancelled;
     }
 
+    // 取消挂单
+    function cancelListing(uint256 listingId) public {
+        Listing storage listing = listings[listingId];
+        require(listing.seller == msg.sender, "You are not the seller");
+        require(listing.status == ListingStatus.Selling, "Listing is not active");
+        
+        _cancelListing(listingId);
+    }
+
     // 购买挂单出售的凭证
     function buyListing(uint256 listingId) public {
         Listing storage listing = listings[listingId];
+        // 验证挂单是否存在
         require(listing.seller != address(0), "Listing does not exist");
+        // 验证卖家不是购买者
         require(listing.seller != msg.sender, "You cannot buy your own listing");
+        // 验证挂单状态
         require(listing.status == ListingStatus.Selling, "Listing is not active");
-        require(!activities[listing.activityId].drawn, "Activity already drawn");
         
         uint256 ticketId = listing.ticketId;
         
@@ -241,77 +257,42 @@ contract Lottery {
         listing.status = ListingStatus.Sold;
     }
     
-    // 通过活动ID获取挂单出售列表（只返回正在出售的）
+    // 通过活动ID获取挂单出售列表
     function getListingsByActivityId(uint256 activityId) public view returns (Listing[] memory) {
         uint256[] memory listingIds = activityIdToListingIds[activityId];
         
-        // 先计算有多少个正在出售的
-        uint256 count = 0;
-        for (uint256 i = 0; i < listingIds.length; i++) {
-            if (listings[listingIds[i]].status == ListingStatus.Selling) {
-                count++;
-            }
-        }
-        
         // 构建结果数组
-        Listing[] memory result = new Listing[](count);
-        uint256 index = 0;
+        Listing[] memory result = new Listing[](listingIds.length);
         for (uint256 i = 0; i < listingIds.length; i++) {
-            if (listings[listingIds[i]].status == ListingStatus.Selling) {
-                result[index] = listings[listingIds[i]];
-                index++;
-            }
+            result[i] = listings[listingIds[i]];
         }
         return result;
     }
 
-    // 通过拥有者获取挂单出售列表（只返回正在出售的）
+    // 通过拥有者获取挂单出售列表
     function getListingsBySeller(address seller) public view returns (Listing[] memory) {
         uint256[] memory ticketIds = ownerToTicketIds[seller];
-        uint256 count = 0;
         
-        // 先计算有多少个在售的凭证
+        Listing[] memory result = new Listing[](ticketIds.length);
         for (uint256 i = 0; i < ticketIds.length; i++) {
-            if (tickets[ticketIds[i]].onSale) {
-                uint256 listingId = ticketIdToListingId[ticketIds[i]];
-                if (listings[listingId].status == ListingStatus.Selling) {
-                    count++;
-                }
-            }
-        }
-        
-        // 构建结果数组
-        Listing[] memory result = new Listing[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < ticketIds.length; i++) {
-            if (tickets[ticketIds[i]].onSale) {
-                uint256 listingId = ticketIdToListingId[ticketIds[i]];
-                if (listings[listingId].status == ListingStatus.Selling) {
-                    result[index] = listings[listingId];
-                    index++;
-                }
-            }
+            result[i] = listings[ticketIdToListingId[ticketIds[i]]];
         }
         return result;
     }
     
     // 开奖
-    function drawLottery(uint256 activityId, uint256 winningOptionIndex) public onlyManager {
+    function drawLottery(uint256 activityId, uint32 winningOptionIndex) public onlyManager {
         require(activityId < activities.length, "Activity does not exist");
         Activity storage activity = activities[activityId];
-        require(!activity.drawn, "Activity already drawn");
+        require(activity.status == ActivityStatus.Active, "Activity is not active");
         require(winningOptionIndex < activity.options.length, "Invalid option index");
         require(block.timestamp >= activity.endTime, "Activity has not ended yet");
-        
-        // 标记活动已开奖
-        activity.drawn = true;
-        activity.winningOptionIndex = winningOptionIndex;
         
         // 获取该活动的所有凭证
         uint256[] memory activityTicketIds = activityIdToTicketIds[activityId];
         
         // 计算获胜者的总投注金额
-        uint256 winningAmount = 0;
+        uint32 winningAmount = 0;
         for (uint256 i = 0; i < activityTicketIds.length; i++) {
             Ticket memory ticket = tickets[activityTicketIds[i]];
             if (ticket.optionIndex == winningOptionIndex) {
@@ -320,17 +301,58 @@ contract Lottery {
         }
         
         require(winningAmount > 0, "No winning tickets");
+
+        // 取消全部挂单（需要在标记为已开奖之前执行）
+        cancelListingsByActivityId(activityId);
+
+        // 标记活动已开奖
+        activity.status = ActivityStatus.Drawn;
+        activity.winningOptionIndex = winningOptionIndex;
         
         // 分配奖金给获胜者（按照投注额比例）
-        uint256 totalPrize = activity.totalAmount;
+        uint32 totalPrize = activity.totalAmount;
         for (uint256 i = 0; i < activityTicketIds.length; i++) {
-            Ticket memory ticket = tickets[activityTicketIds[i]];
+            Ticket storage ticket = tickets[activityTicketIds[i]];
             if (ticket.optionIndex == winningOptionIndex) {
                 address winner = myERC721.ownerOf(ticket.id);
-                uint256 prize = (totalPrize * ticket.amount) / winningAmount;
+                // 向下取整
+                uint32 prize = (totalPrize * ticket.amount) / winningAmount;
                 bool ok = myERC20.transfer(winner, prize);
                 require(ok, "Prize transfer failed");
             }
+            ticket.onSale = false;
+        }
+    }
+
+    // 退款
+    function refund(uint256 activityId) public {
+        require(activityId < activities.length, "Activity does not exist");
+        Activity storage activity = activities[activityId];
+        require(activity.status == ActivityStatus.Active, "Activity is not active");
+
+        // 取消全部挂单
+        cancelListingsByActivityId(activityId);
+        
+        // 标记活动已退款
+        activity.status = ActivityStatus.Refunded;
+        uint256[] memory activityTicketIds = activityIdToTicketIds[activityId];
+        for (uint256 i = 0; i < activityTicketIds.length; i++) {
+            Ticket storage ticket = tickets[activityTicketIds[i]];
+            bool ok = myERC20.transfer(myERC721.ownerOf(ticket.id), ticket.amount);
+            require(ok, "Refund transfer failed");
+            ticket.onSale = false;
+        }
+    }
+
+    // 取消一个活动的所有挂单
+    function cancelListingsByActivityId(uint256 activityId) public onlyManager {
+        require(activityId < activities.length, "Activity does not exist");
+        Activity memory activity = activities[activityId];
+        require(activity.status == ActivityStatus.Active, "Activity is not active");
+        
+        uint256[] memory activityListingIds = activityIdToListingIds[activityId];
+        for (uint256 i = 0; i < activityListingIds.length; i++) {
+            _cancelListing(activityListingIds[i]);
         }
     }
 }

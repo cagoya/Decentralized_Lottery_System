@@ -100,7 +100,7 @@ describe("Lottery Contract", function () {
       expect(activities[0].options).to.deep.equal(["Team A", "Team B"]);
       expect(activities[0].baseAmount).to.equal(baseAmount);
       expect(activities[0].totalAmount).to.equal(baseAmount);
-      expect(activities[0].drawn).to.equal(false);
+      expect(activities[0].status).to.equal(0); // ActivityStatus.Active
     });
 
     it("Should mint base amount to contract", async function () {
@@ -204,7 +204,7 @@ describe("Lottery Contract", function () {
       await lottery.connect(user1).buyTicket(activityId, 0, amount);
 
       const activity = await lottery.getActivityById(activityId);
-      expect(activity.totalAmount).to.equal(activity.baseAmount.add(amount));
+      expect(activity.totalAmount).to.equal(activity.baseAmount + amount);
     });
 
     it("Should fail with invalid activity ID", async function () {
@@ -225,11 +225,14 @@ describe("Lottery Contract", function () {
       ).to.be.revertedWith("Amount must be greater than 0");
     });
 
-    it("Should fail after activity ended", async function () {
+    it("Should fail after activity drawn", async function () {
+      // 先购买一些票，这样才能开奖
+      await lottery.connect(user1).buyTicket(activityId, 0, 100);
       await time.increaseTo(endTime + 1);
+      await lottery.drawLottery(activityId, 0);
       await expect(
         lottery.connect(user1).buyTicket(activityId, 0, 100)
-      ).to.be.revertedWith("Activity has ended");
+      ).to.be.revertedWith("Activity is not active");
     });
 
     it("Should allow multiple users to buy tickets", async function () {
@@ -460,7 +463,7 @@ describe("Lottery Contract", function () {
       await lottery.drawLottery(activityId, 0);
 
       const activity = await lottery.getActivityById(activityId);
-      expect(activity.drawn).to.equal(true);
+      expect(activity.status).to.equal(1); // ActivityStatus.Drawn
       expect(activity.winningOptionIndex).to.equal(0);
     });
 
@@ -527,7 +530,7 @@ describe("Lottery Contract", function () {
 
       await expect(
         lottery.drawLottery(activityId, 0)
-      ).to.be.revertedWith("Activity already drawn");
+      ).to.be.revertedWith("Activity is not active");
     });
 
     it("Should fail with invalid option index", async function () {
@@ -608,13 +611,14 @@ describe("Lottery Contract", function () {
       expect(listings.length).to.equal(2);
     });
 
-    it("Should only return active listings", async function () {
+    it("Should return all listings including cancelled ones", async function () {
       await myERC721.connect(user1).approve(lottery.address, 0);
       await lottery.connect(user1).listTicket(0, 150);
       await lottery.connect(user1).cancelListing(0);
 
       const listings = await lottery.getListingsByActivityId(0);
-      expect(listings.length).to.equal(0); // 已取消的不应该返回
+      expect(listings.length).to.equal(1);
+      expect(listings[0].status).to.equal(1); // ListingStatus.Cancelled
     });
   });
 
@@ -647,7 +651,7 @@ describe("Lottery Contract", function () {
 
       // 6. 验证获胜者获得了奖金
       const activity = await lottery.getActivityById(0);
-      expect(activity.drawn).to.equal(true);
+      expect(activity.status).to.equal(1); // ActivityStatus.Drawn
       expect(activity.winningOptionIndex).to.equal(0);
     });
 
@@ -673,11 +677,11 @@ describe("Lottery Contract", function () {
       await lottery.drawLottery(0, 0);
 
       const activity1 = await lottery.getActivityById(0);
-      expect(activity1.drawn).to.equal(true);
+      expect(activity1.status).to.equal(1); // ActivityStatus.Drawn
 
       // 第二个活动还未开奖
       const activity2 = await lottery.getActivityById(1);
-      expect(activity2.drawn).to.equal(false);
+      expect(activity2.status).to.equal(0); // ActivityStatus.Active
     });
   });
 });
