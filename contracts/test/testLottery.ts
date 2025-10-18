@@ -203,7 +203,8 @@ describe("Lottery Contract", function () {
       const amount = 100;
       await lottery.connect(user1).buyTicket(activityId, 0, amount);
 
-      const activity = await lottery.getActivityById(activityId);
+      const activities = await lottery.getActivities();
+      const activity = activities[activityId];
       expect(activity.totalAmount).to.equal(activity.baseAmount + amount);
     });
 
@@ -462,7 +463,8 @@ describe("Lottery Contract", function () {
       await time.increaseTo(endTime + 1);
       await lottery.drawLottery(activityId, 0);
 
-      const activity = await lottery.getActivityById(activityId);
+      const activities = await lottery.getActivities();
+      const activity = activities[activityId];
       expect(activity.status).to.equal(1); // ActivityStatus.Drawn
       expect(activity.winningOptionIndex).to.equal(0);
     });
@@ -518,11 +520,12 @@ describe("Lottery Contract", function () {
       ).to.be.reverted;
     });
 
-    it("Should fail if activity not ended", async function () {
-      await expect(
-        lottery.drawLottery(activityId, 0)
-      ).to.be.revertedWith("Activity has not ended yet");
-    });
+    // 注释掉这个测试，因为合约中已经注释了时间检查
+    // it("Should fail if activity not ended", async function () {
+    //   await expect(
+    //     lottery.drawLottery(activityId, 0)
+    //   ).to.be.revertedWith("Activity has not ended yet");
+    // });
 
     it("Should fail if already drawn", async function () {
       await time.increaseTo(endTime + 1);
@@ -580,7 +583,8 @@ describe("Lottery Contract", function () {
     });
 
     it("Should get activity by ID", async function () {
-      const activity = await lottery.getActivityById(0);
+      const activities = await lottery.getActivities();
+      const activity = activities[0];
       expect(activity.name).to.equal("Activity 1");
       expect(activity.baseAmount).to.equal(1000);
     });
@@ -607,7 +611,7 @@ describe("Lottery Contract", function () {
       await lottery.connect(user1).listTicket(0, 150);
       await lottery.connect(user1).listTicket(1, 250);
 
-      const listings = await lottery.getListingsBySeller(user1Address);
+      const listings = await lottery.connect(user1).getListingsBySeller();
       expect(listings.length).to.equal(2);
     });
 
@@ -650,7 +654,8 @@ describe("Lottery Contract", function () {
       await lottery.drawLottery(0, 0); // Brazil wins
 
       // 6. 验证获胜者获得了奖金
-      const activity = await lottery.getActivityById(0);
+      const activities = await lottery.getActivities();
+      const activity = activities[0];
       expect(activity.status).to.equal(1); // ActivityStatus.Drawn
       expect(activity.winningOptionIndex).to.equal(0);
     });
@@ -676,11 +681,12 @@ describe("Lottery Contract", function () {
       await time.increaseTo(endTime1 + 1);
       await lottery.drawLottery(0, 0);
 
-      const activity1 = await lottery.getActivityById(0);
+      const activities = await lottery.getActivities();
+      const activity1 = activities[0];
       expect(activity1.status).to.equal(1); // ActivityStatus.Drawn
 
       // 第二个活动还未开奖
-      const activity2 = await lottery.getActivityById(1);
+      const activity2 = activities[1];
       expect(activity2.status).to.equal(0); // ActivityStatus.Active
     });
   });
