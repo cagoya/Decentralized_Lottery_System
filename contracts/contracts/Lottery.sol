@@ -356,7 +356,11 @@ contract Lottery {
             }
         }
         
-        require(winningAmount > 0, "No winning tickets");
+        if (winningAmount == 0) {
+            // 没有获胜者，将奖池退还给所有参与者
+            refund(activityId);
+            return;
+        }
 
         // 取消全部挂单（需要在标记为已开奖之前执行）
         cancelListingsByActivityId(activityId);
