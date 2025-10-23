@@ -22,6 +22,11 @@ const router = createRouter({
       path: '/listing',
       name: 'Listing',
       component: () => import('../views/Listing.vue')
+    },
+    {
+      // 将其余URL重定向到主页
+      path: '/:pathMatch(.*)*',
+      redirect: '/'
     }
   ]
 })
