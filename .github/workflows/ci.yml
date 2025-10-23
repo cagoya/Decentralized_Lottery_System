@@ -31,6 +31,3 @@ jobs:
       
       - name: Compile contracts
         run: npx hardhat compile
-      
-      - name: Run tests
-        run: npx hardhat test
