@@ -115,6 +115,7 @@
             :erc20-contract="myERC20Contract"
             @cancel-success="loadListings"
             @show-buy-dialog="showBuyDialog"
+            @show-cancel-dialog="showCancelDialog"
           />
         </div>
       </el-card>
@@ -166,12 +167,71 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 取消出售确认对话框 -->
+    <el-dialog 
+      v-model="cancelDialogVisible" 
+      title="取消出售确认" 
+      width="450px"
+      :close-on-click-modal="false"
+    >
+      <div v-if="selectedCancelListing" class="cancel-dialog-content">
+        <el-alert 
+          title="取消出售确认" 
+          type="warning" 
+          :closable="false"
+          show-icon
+        >
+          您确定要取消该凭证的出售吗？取消后将无法恢复。
+        </el-alert>
+        
+        <div class="cancel-info">
+          <el-row :gutter="20" class="info-row">
+            <el-col :span="10" class="label">挂单ID:</el-col>
+            <el-col :span="14">{{ selectedCancelListing.id }}</el-col>
+          </el-row>
+          
+          <el-row :gutter="20" class="info-row">
+            <el-col :span="10" class="label">凭证ID:</el-col>
+            <el-col :span="14">{{ selectedCancelListing.ticketId }}</el-col>
+          </el-row>
+          
+          <el-row :gutter="20" class="info-row">
+            <el-col :span="10" class="label">活动名称:</el-col>
+            <el-col :span="14">{{ getActivityName(selectedCancelListing) }}</el-col>
+          </el-row>
+          
+          <el-row :gutter="20" class="info-row">
+            <el-col :span="10" class="label">投注选项:</el-col>
+            <el-col :span="14">
+              <el-tag type="success" size="small">{{ getOptionName(selectedCancelListing) }}</el-tag>
+            </el-col>
+          </el-row>
+          
+          <el-row :gutter="20" class="info-row">
+            <el-col :span="10" class="label">出售价格:</el-col>
+            <el-col :span="14" class="price">{{ selectedCancelListing.price }} ZJU</el-col>
+          </el-row>
+        </div>
+      </div>
+      
+      <template #footer>
+        <el-button @click="cancelDialogVisible = false">取消</el-button>
+        <el-button 
+          type="danger" 
+          @click="onCancelListing"
+          :loading="cancelLoading"
+        >
+          确认取消
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, inject, watch, type Ref } from 'vue'
-import { ElCard, ElButton, ElEmpty, ElIcon, ElMessage, ElRadioGroup, ElRadioButton, ElRow, ElCol, ElInput, ElDivider, ElAlert, ElDialog } from 'element-plus'
+import { ElCard, ElButton, ElEmpty, ElIcon, ElMessage, ElRadioGroup, ElRadioButton, ElRow, ElCol, ElInput, ElDivider, ElAlert, ElDialog, ElTag } from 'element-plus'
 import { Loading, Refresh } from '@element-plus/icons-vue'
 import ListingCard from '../components/ListingCard.vue'
 
@@ -205,6 +265,11 @@ const selectedActivityId = ref<string>('')
 const buyDialogVisible = ref(false)
 const buyLoading = ref(false)
 const selectedListing = ref<Listing | null>(null)
+
+// 取消对话框相关状态
+const cancelDialogVisible = ref(false)
+const cancelLoading = ref(false)
+const selectedCancelListing = ref<Listing | null>(null)
 
 /**
  * 加载挂单列表
@@ -305,6 +370,14 @@ const showBuyDialog = (listing: Listing) => {
 }
 
 /**
+ * 显示取消确认对话框
+ */
+const showCancelDialog = (listing: Listing) => {
+  selectedCancelListing.value = listing
+  cancelDialogVisible.value = true
+}
+
+/**
  * 购买挂单
  */
 const onBuyListing = async () => {
@@ -346,6 +419,40 @@ const onBuyListing = async () => {
     ElMessage.error(error.message || '购买失败，请重试')
   } finally {
     buyLoading.value = false
+  }
+}
+
+/**
+ * 取消挂单
+ */
+const onCancelListing = async () => {
+  if (!account.value || !lotteryContract || !selectedCancelListing.value) {
+    ElMessage.error('合约或账户未准备就绪')
+    return
+  }
+
+  cancelLoading.value = true
+  try {
+    ElMessage.info('正在取消出售...')
+    
+    await lotteryContract.methods
+      .cancelListing(selectedCancelListing.value.id)
+      .send({ from: account.value })
+
+    ElMessage.success('取消成功！')
+    
+    // 关闭对话框
+    cancelDialogVisible.value = false
+    selectedCancelListing.value = null
+    
+    // 刷新挂单列表
+    loadListings()
+    
+  } catch (error: any) {
+    console.error('取消失败:', error)
+    ElMessage.error(error.message || '取消失败，请重试')
+  } finally {
+    cancelLoading.value = false
   }
 }
 
@@ -528,6 +635,35 @@ onMounted(() => {
 }
 
 .buy-info .price {
+  color: #f56c6c;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+/* 取消对话框内容 */
+.cancel-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.cancel-info {
+  padding: 15px;
+  background: #f7f9fc;
+  border-radius: 8px;
+}
+
+.cancel-info .info-row {
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.cancel-info .label {
+  font-weight: bold;
+  color: #606266;
+}
+
+.cancel-info .price {
   color: #f56c6c;
   font-weight: 700;
   font-size: 1.1rem;

@@ -72,7 +72,7 @@
         <el-button 
           v-if="isSeller" 
           type="danger" 
-          @click="onCancelListing"
+          @click="onClickCancel"
           :loading="cancelLoading"
         >
           取消出售
@@ -123,6 +123,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   'cancel-success': []
   'show-buy-dialog': [listing: Listing]
+  'show-cancel-dialog': [listing: Listing]
 }>()
 
 const cancelLoading = ref(false)
@@ -171,33 +172,10 @@ const onClickBuy = () => {
 }
 
 /**
- * 取消挂单
+ * 点击取消按钮
  */
-const onCancelListing = async () => {
-  if (!props.currentAccount || !props.lotteryContract) {
-    ElMessage.error('合约或账户未准备就绪')
-    return
-  }
-
-  cancelLoading.value = true
-  try {
-    ElMessage.info('正在取消出售...')
-    
-    await props.lotteryContract.methods
-      .cancelListing(props.listing.id)
-      .send({ from: props.currentAccount })
-
-    ElMessage.success('取消成功！')
-    
-    // 触发成功事件，通知父组件刷新数据
-    emit('cancel-success')
-    
-  } catch (error: any) {
-    console.error('取消失败:', error)
-    ElMessage.error(error.message || '取消失败，请重试')
-  } finally {
-    cancelLoading.value = false
-  }
+const onClickCancel = () => {
+  emit('show-cancel-dialog', props.listing)
 }
 
 /**
